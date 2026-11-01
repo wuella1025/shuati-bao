@@ -1,0 +1,9 @@
+# 不要提交任何未授權題庫或學習備份
+/data/
+*.json
+!package.json
+!package-lock.json
+*backup*
+.env*
+.DS_Store
+node_modules/

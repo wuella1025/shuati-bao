@@ -1,42 +1,54 @@
-# StudyFlow — Java 個人刷題平台（第六階段）
+# 刷題寶｜個人刷題練習平台
 
-## 啟動
-請在本資料夾執行 `python -m http.server 8000`，再開啟 http://localhost:8000/ 。也可用 VS Code Live Server。請勿直接以 file:// 雙擊 index.html。
+適合 GitHub Pages 的靜態網站，採用 HTML、CSS、JavaScript 模組化架構。**公開版不包含題庫、答案、解析或使用者的學習紀錄。** 請只匯入自己有權使用的 JSON 題庫，且勿將題庫或學習備份提交至 GitHub。
 
-## 現有功能
-- 原始 `data/Java期中考.json`，250 題／5 章，無假資料；可依章節瀏覽、搜尋題目。
-- 全部、章節、隨機、未練習、錯題與收藏模式；確認答案後才顯示正確答案與解析；可結算及接續未完成練習。
-- 錯題歷史、連對三次掌握、收藏、備註、學習統計與圖表。
-- 「題庫設定」可以驗證並匯入相同結構的 JSON、更換題庫、還原內建題庫、下載備份、還原備份、重設練習資料。
+## 專案結構
 
-## 資料保存及相容性
-題庫與紀錄分開儲存在瀏覽器 localStorage；紀錄 ID 使用 `java-midterm:章節:id`。題庫更新時原 ID 的歷史仍保留；已被刪除的題目紀錄也保留在儲存空間內，不列入當前統計。不同題庫若重複使用同章節和題號，會對應同一筆學習資料，建議為不同科目建立不同 subjectId，未來擴充時再加入科目切換。匯入的 JSON 暫存於當前瀏覽器，並不覆蓋磁碟上的原始檔案。
+```text
+shuati-bao/
+├── index.html
+├── css/style.css
+├── js/
+│   ├── app.js
+│   ├── questionBank.js
+│   ├── dataManagement.js
+│   ├── practice.js
+│   ├── storage.js
+│   ├── statistics.js
+│   └── clearStorage.js
+├── .gitignore
+├── .nojekyll
+└── README.md
+```
 
-備份格式為 `studyflow-backup` version 1，包括已儲存的學習資料及（如存在）自訂匯入題庫。還原會覆蓋目前單一科目的資料；重設只清除紀錄、不刪除題庫。請妥善保管備份 JSON，避免清除網站資料後無法復原。
+## 功能
 
-## JSON 格式
-最外層為章節鍵對應題目陣列；題目至少含 `id`、`question`、`options`、`answer`，可有 `explanation`。單選以答案選項鍵如 `"B"` 表示，多選可用陣列；未能辨識或重複 ID 將阻止匯入並顯示錯誤。詳細欄位以 `js/questionBank.js` 的驗證為準。
+- 首次開啟要求在瀏覽器匯入 JSON 題庫，不會從公開網站自動載入題庫。
+- 支援章節練習、全部題目、隨機練習、未練習題目、錯題與收藏練習。
+- 按「確認答案」才會顯示解析；直接結算時會自動確認已選但未確認的答案，未作答不計分。
+- 結算後能查看答錯題目及解析；提供錯題本、訂正追蹤、收藏備註、學習統計。
+- 可備份、還原、刪除單題紀錄及清除整個 localStorage。
+- 題庫與學習紀錄儲存在瀏覽器的 localStorage；**不是加密儲存**，清除瀏覽器資料或改用不同裝置不會自動同步。
 
-## 測試
-執行 `node tests/bank.test.mjs`、`node tests/practice.test.mjs`、`node tests/stage4.test.mjs`、`node tests/statistics.test.mjs`、`node tests/dataManagement.test.mjs`。
+## 題庫格式
 
-JavaScript 語法及五組測試已通過。自動瀏覽器嘗試因執行環境的網站存取政策被阻擋，因此尚未證實桌面及手機瀏覽器操作；請在本機檢查：桌面側欄、手機選單、題庫匯入與錯誤提示、答案確認、收藏、備份下載、還原（先備份）、重設兩次確認，以及重新整理後紀錄是否存在。
+使用章節鍵名對應題目陣列的 JSON 物件；每題至少有 `id`、`question`、`options`、`answer`，可有 `explanation`。詳細支援以 `js/questionBank.js` 驗證規則為準。檔案限 5 MB。請勿在此公開儲存庫加入未經授權的題庫。
 
-## 最新修正版：練習紀錄刪除、結算自動確認、錯題詳解
+## 在本機預覽
 
-- **設定 → 手動刪除單題紀錄**：搜尋題號或題目，可個別刪除該題累積作答、錯題、收藏與備註。刪除前會再次確認。
-- **學習統計 → 練習成績紀錄**：可刪除指定的一次練習歷史（不反向刪除已累積至題目上的作答統計）。新版本完成的練習可按「檢視」查看當次答錯題目與解析；舊版已完成場次沒有保存逐題明細，不會虛構補回。
-- **結算時自動確認**：練習中每次選擇或輸入答案即暫存草稿，不顯示正確答案；按「結算練習」時會列出已選未確認與完全未作答數量，確認後自動判分，**不重複計算**已確認題目。完全未作答題目不計入正確率分母。
-- **結算詳解**：成績下方直接顯示所有答錯題目的完整題目、選項、自己答案、正確答案及原始 JSON 解析；可切換查看全部題目。
+於專案資料夾使用 VS Code Live Server，或執行 `python -m http.server 8000` 後開啟 `http://localhost:8000/`。請勿直接以 `file://` 開啟 `index.html`。
 
-### 重要限制
+## GitHub Pages 部署（wuella1025/shuati-bao）
 
-使用 `localStorage` 儲存資料；每次練習的逐題快照從本修正版起才會寫入歷史紀錄。刪除單題紀錄不會覆寫早期已結算場次的歷史分數，因此可以選擇另行刪除那些場次。建議刪除前先進入設定下載備份。
+1. 將**本資料夾內的檔案與 css/、js/ 資料夾**放到儲存庫根目錄，不要多包一層 `shuati-bao/`。
+2. 確保 GitHub 上的 `css/style.css`、`js/app.js` 路徑完全正確。
+3. 前往 Settings → Pages → Build and deployment，選擇 Deploy from a branch、`main`、`/(root)`，儲存。
+4. 網址預期為 `https://wuella1025.github.io/shuati-bao/`；進入後從本機匯入題庫。
+5. 建議先確認所有檔案沒有私人題庫或學習備份，再提交。請注意已提交進 Git 歷史的檔案不會因刪除最新版本而消失。
 
-### 測試
+## 安全注意
 
-已通過既有五組 Node 回歸測試，以及 `tests/fixes.test.mjs` 的自動確認、防止重複計分、未答題排除、單題與場次刪除測試；JavaScript 語法檢查通過。瀏覽器自動化測試受到環境網址封鎖，仍需在本機桌面及手機瀏覽器實際驗收。
-
-## 一鍵清空 localStorage
-
-前往「題庫設定」→「一鍵清空 localStorage」，先確認並輸入「清空」即可呼叫 `localStorage.clear()`，再重新載入網站。這會清除**相同 origin 的全部 localStorage**，含匯入題庫及其他同來源應用的儲存資料；內建的 `data/Java期中考.json` 不受影響。清除前請先匯出備份。
+- `.gitignore` 會忽略 `*.json`、`data/`、`*backup*` 等項目，但**直接使用 GitHub 網頁上傳時不會自動替你過濾**；提交前仍需人工檢查。
+- Content Security Policy、字串跳脫及匯入驗證可降低風險，但不代表經過全面滲透測試。
+- `localStorage.clear()` 會清空同一 GitHub Pages 來源下的所有 localStorage，可能影響同帳號的其他 Pages 網站。
+- 備份可能包含題庫的全部內容，請勿將備份上傳到公開 GitHub。
