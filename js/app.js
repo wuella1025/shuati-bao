@@ -1,3 +1,4 @@
+import { parseQuestionZip, saveMedia, getMedia, clearMedia } from './media.js';
 import { clearAllLocalStorage } from './clearStorage.js';
 import { readImportedBank, validateImportedBank, saveImportedBank, removeImportedBank, createBackup, restoreBackup, resetLearning, storedInfo } from './dataManagement.js';
 import { loadProgress, saveProgress, loadSession, saveSession, loadHistory, addHistory, deleteHistory, deleteQuestionRecord, summarizeProgress } from './storage.js';
@@ -77,7 +78,7 @@ function bankPage(){
  content.innerHTML=title('QUESTION BANK','題庫瀏覽',`目前題庫共有 ${fmt(state.bank.questions.length)} 題；此頁僅供瀏覽，不會記錄答題。`)+
  `<div class="toolbar"><input id="searchInput" class="field search" type="search" placeholder="搜尋題目、選項或題號…" aria-label="搜尋題目" value="${esc(state.search)}"><select class="field" id="chapterFilter" aria-label="篩選章節"><option value="all">所有章節</option>${state.bank.chapters.map(ch=>`<option value="${esc(ch.id)}" ${state.chapter===ch.id?'selected':''}>${esc(ch.title)}（${ch.count} 題）</option>`).join('')}</select></div>`+
  `<div class="section-header"><h2>題目清單</h2><span class="muted" style="font-size:13px">符合條件 ${all.length} 題</span></div>`+
- `<section class="question-list">${slice.length?slice.map(q=>`<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="muted" style="font-size:12px">${q.type==='single'?'單選題':q.type==='multiple'?'多選題':q.type==='text'?'填答題':'尚未支援'}</span></div><p class="question-text">${esc(q.text)}</p><div class="option-list">${q.options.map(([key,value])=>`<div class="option"><b>${esc(key)}</b>${esc(value)}</div>`).join('')}</div><div class="question-foot"><small>此頁為題庫預覽，非作答模式</small><button type="button" class="btn btn-secondary" data-reveal="${esc(q.id)}" aria-expanded="${state.revealed.has(q.id)}">${state.revealed.has(q.id)?'收起答案':'查看答案與解析'}</button></div>${state.revealed.has(q.id)?`<div class="answer-panel"><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}</div><div><b>解析：</b>${esc(q.explanation||'原始題庫未提供解析')}</div></div>`:''}</article>`).join(''):`<div class="card empty">找不到符合搜尋條件的題目。</div>`}</section>`+
+ `<section class="question-list">${slice.length?slice.map(q=>`<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="muted" style="font-size:12px">${q.type==='single'?'單選題':q.type==='multiple'?'多選題':q.type==='text'?'填答題':q.type==='boolean'?'是非題':q.type==='essay'?'問答題':'尚未支援'}</span></div><div class="question-text">${renderQuestionBody(q)}</div>${questionMedia(q)}<div class="option-list">${q.options.map(([key,value])=>`<div class="option"><b>${esc(key)}</b>${esc(value)}</div>`).join('')}</div><div class="question-foot"><small>此頁為題庫預覽，非作答模式</small><button type="button" class="btn btn-secondary" data-reveal="${esc(q.id)}" aria-expanded="${state.revealed.has(q.id)}">${state.revealed.has(q.id)?'收起答案':'查看答案與解析'}</button></div>${state.revealed.has(q.id)?`<div class="answer-panel"><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}</div><div><b>解析：</b>${esc(q.explanation||'原始題庫未提供解析')}</div></div>${referenceButton(q,true)}`:''}</article>`).join(''):`<div class="card empty">找不到符合搜尋條件的題目。</div>`}</section>`+
  `<div class="page-controls"><button class="btn btn-secondary" id="prevPage" ${state.pageNumber===1?'disabled':''}>上一頁</button><span>第 ${state.pageNumber} / ${pages} 頁</span><button class="btn btn-secondary" id="nextPage" ${state.pageNumber===pages?'disabled':''}>下一頁</button></div>`;
  const input=document.getElementById('searchInput');
  input.oninput=()=>{const v=input.value, caret=input.selectionStart;state.search=v;state.pageNumber=1;bankPage();const next=document.getElementById('searchInput');next.focus();next.setSelectionRange(caret,caret);};
@@ -85,6 +86,62 @@ function bankPage(){
  document.getElementById('prevPage').onclick=()=>{state.pageNumber--;bankPage();};
  document.getElementById('nextPage').onclick=()=>{state.pageNumber++;bankPage();};
  content.querySelectorAll('[data-reveal]').forEach(btn=>btn.onclick=()=>{const id=btn.dataset.reveal;if(state.revealed.has(id))state.revealed.delete(id);else state.revealed.add(id);bankPage();});
+}
+function renderQuestionBody(q){
+ const blocks=q?.contentBlocks?.length?q.contentBlocks:[{type:'text',value:q.text}];
+ return blocks.map(block=>{
+  if(block.type==='text')return `<div class="mixed-text preline">${esc(block.value)}</div>`;
+  if(block.type==='code')return `<div class="mixed-code"><div class="mixed-code-label">${esc(block.language||'程式碼')}</div><pre><code>${esc(block.value)}</code></pre></div>`;
+  if(block.type==='image')return `<div class="question-media"><div class="media-caption">${esc(block.alt||'題目附圖')}</div><div data-private-block-image="${esc(block.src)}">圖片讀取中…</div></div>`;
+  return '';
+ }).join('');
+}
+function questionMedia(q){
+ if(!q?.questionImages?.length)return '';
+ return `<div class="question-media"><div class="media-caption">原始題目畫面（僅題目與選項，不含答案）</div><div data-private-question="${esc(q.id)}">圖片讀取中…</div></div>`;
+}
+// Render question-only crops from locally imported ZIP. Never use full answer-bearing pages before confirmation.
+async function hydrateQuestionMedia(){
+ const bank=state.bank;if(!bank)return;
+ for(const node of content.querySelectorAll('[data-private-block-image]:not([data-ready])')){
+  node.dataset.ready='1';const path=node.dataset.privateBlockImage;
+  try{const blob=await getMedia(path);node.replaceChildren();if(!blob){node.textContent='題目圖片缺失，請重新匯入包含圖片的私人 ZIP。';continue;}
+   const url=URL.createObjectURL(blob);const img=document.createElement('img');img.src=url;img.className='question-source-image';img.alt='題目附圖';img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);node.append(img);
+  }catch(e){node.textContent='題目圖片載入失敗。'}
+ }
+ for(const node of content.querySelectorAll('[data-private-question]:not([data-ready])')){
+  node.dataset.ready='1';const q=bank.questionMap.get(node.dataset.privateQuestion);if(!q)continue;
+  node.textContent='';
+  for(const path of q.questionImages||[]){
+   try{const blob=await getMedia(path);if(!blob){const t=document.createElement('p');t.textContent='題目附圖缺失，請重新匯入含題目圖片的私人 ZIP。';node.append(t);continue;}
+    const img=document.createElement('img');const url=URL.createObjectURL(blob);img.src=url;img.className='question-source-image';img.alt='原教材題目與選項原貌（無答案）';img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);node.append(img);
+   }catch(e){const t=document.createElement('p');t.textContent='題目圖片載入失敗：'+e.message;node.append(t);}
+  }
+ }
+}
+const imageObserver=new MutationObserver(()=>{void hydrateQuestionMedia()});
+imageObserver.observe(content,{childList:true,subtree:true});
+function referenceButton(q,visible=false){
+ if(!q?.referenceImages?.length||!visible)return '';
+ return `<div class="source-reference"><p class="small-note">來源原頁可能包含本題與同頁其他題的答案，只適合確認作答後核對。</p><button type="button" class="btn btn-secondary" data-source-page="${esc(q.id)}">查看原始頁面（含答案）</button><div class="reference-output" data-source-output="${esc(q.id)}"></div></div>`;
+}
+function wireReferenceImages(root=content){
+ root.querySelectorAll('[data-source-page]').forEach(btn=>btn.onclick=async()=>{
+  const q=state.bank.questionMap.get(btn.dataset.sourcePage),box=root.querySelector('[data-source-output="'+CSS.escape(btn.dataset.sourcePage)+'"]');
+  if(!q||!box)return;
+  box.replaceChildren();
+  for(const path of q.referenceImages||[]){const blob=await getMedia(path);if(!blob){const p=document.createElement('p');p.textContent='找不到圖片：'+path+'。請重新匯入包含圖片的 ZIP。';box.append(p);continue;}
+   const url=URL.createObjectURL(blob);const img=document.createElement('img');img.src=url;img.alt='原始教材參照頁（包含答案）';img.className='reference-page';img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);box.append(img);
+  }
+ });
+}
+async function importQuizFile(input){
+ const file=input.files?.[0];if(!file)throw new Error('請先選擇 JSON 或 ZIP 題庫。');
+ if(/\.zip$/i.test(file.name)){
+  const {raw,pages}=await parseQuestionZip(file);const bank=validateImportedBank(JSON.stringify(raw)).bank;
+  await saveMedia(pages);saveImportedBank(raw);return bank;
+ }
+ const text=await readJsonFile(input);const {raw,bank}=validateImportedBank(text);await clearMedia();saveImportedBank(raw);return bank;
 }
 function downloadJson(name,data){
  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}));
@@ -109,7 +166,7 @@ function settingsPage(){
  const b=state.bank,info=storedInfo(b),imported=!!localStorage.getItem('personal-quiz:bank:v1:'+b.subjectId);
  content.innerHTML=title('DATA MANAGEMENT','題庫設定與學習資料','匯入題庫前先驗證格式；練習紀錄與題庫分開保存。')+
  `<div class="card"><h2>目前題庫資訊</h2><table class="info-table"><tbody><tr><td>科目</td><td>${esc(b.subjectName)}</td></tr><tr><td>題庫來源</td><td>使用者本機匯入</td></tr><tr><td>章節</td><td>${b.chapters.length} 章</td></tr><tr><td>題數</td><td>${b.questions.length} 題</td></tr><tr><td>格式驗證</td><td>通過</td></tr><tr><td>目前題庫有效紀錄</td><td>${info.activeRecords} 筆</td></tr><tr><td>目前題庫外的保留紀錄</td><td>${info.orphanRecords} 筆</td></tr></tbody></table></div>`+
- `<div class="section-header"><h2>題庫管理</h2></div><section class="card settings-actions"><p class="muted">支援原始 chapter_* → 題目陣列格式。匯入新題庫會保留相同 ID 的紀錄，也不會刪除舊題目歷史。建議匯入前先備份。</p><label for="bankUpload" class="input-label">選擇 JSON 題庫<input class="field" type="file" id="bankUpload" accept=".json,application/json"></label><div class="tool-actions"><button class="btn" id="bankImport">驗證並匯入題庫</button><button class="btn btn-secondary" id="removeBank" type="button">移除本機題庫</button></div><p class="small-note">更換題庫會結束目前未完成的練習，但已確認作答仍保留。題目唯一識別碼為「科目：章節：題號」。</p></section>`+
+ `<div class="section-header"><h2>題庫管理</h2></div><section class="card settings-actions"><p class="muted">支援 chapter_* JSON 與包含原頁圖片的五章 ZIP（私人匯入）。匯入新題庫會保留相同 ID 的紀錄，也不會刪除舊題目歷史。建議匯入前先備份。</p><label for="bankUpload" class="input-label">選擇 JSON 或含圖片的 ZIP 題庫<input class="field" type="file" id="bankUpload" accept=".json,.zip,application/json,application/zip"></label><div class="tool-actions"><button class="btn" id="bankImport">驗證並匯入題庫</button><button class="btn btn-secondary" id="removeBank" type="button">移除本機題庫</button></div><p class="small-note">更換題庫會結束目前未完成的練習，但已確認作答仍保留。題目唯一識別碼為「科目：章節：題號」。</p></section>`+
  `<div class="section-header"><h2>資料備份與還原</h2></div><section class="card settings-actions"><p class="muted">備份包含本機作答紀錄、錯題與收藏、備註、練習成績、未完成練習及匯入的題庫。還原會覆蓋此科目的現有學習資料。</p><div class="tool-actions"><button class="btn" id="exportBackup">下載 JSON 備份</button></div><label for="backupUpload" class="input-label">選擇備份檔案<input class="field" type="file" id="backupUpload" accept=".json,application/json"></label><button class="btn btn-secondary" id="restoreBackup">驗證並還原備份</button></section>`+
  `<div class="section-header"><h2>重設學習紀錄</h2></div><section class="card settings-actions"><p class="muted">只清除練習紀錄、錯題、收藏、備註、練習歷史與暫存進度，不刪除目前使用的題庫。建議先下載備份。</p><button class="btn btn-danger" id="resetProgress">重設所有學習紀錄</button></section>`+
  `<div class="section-header"><h2>一鍵清空 localStorage</h2></div><section class="card settings-actions"><p class="muted"><strong>清空此網站來源的所有 localStorage 資料</strong>，包含學習紀錄、收藏、備註、練習歷史、未完成進度及匯入的題庫。清空後需要重新匯入題庫。若同一網站來源還有其他頁面使用 localStorage，也會一起清除。此操作無法復原，請先下載備份。</p><button class="btn btn-danger" id="clearLocalStorage" type="button">一鍵清空 localStorage</button></section>`+
@@ -119,7 +176,7 @@ function settingsPage(){
  const recordSearch=document.getElementById('recordSearch'),recordMatches=document.getElementById('recordMatches');
  const renderMatches=()=>{const progress=loadProgress(b.subjectId);const query=recordSearch.value.trim().toLowerCase();const matched=b.questions.filter(q=>progress[q.id]&&((Number(progress[q.id].attempts)||0)>0||progress[q.id].favorite||progress[q.id].note||progress[q.id].wrong)&&(!query||q.id.toLowerCase().includes(query)||q.text.toLowerCase().includes(query))).slice(0,30);recordMatches.innerHTML=matched.length?matched.map(q=>`<div class="record-delete-row"><span><b>${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</b> — ${esc(q.text)}</span><button class="btn btn-danger" data-delete-record="${esc(q.id)}">刪除本題紀錄</button></div>`).join(''):'<div class="empty">沒有符合的學習紀錄。</div>';recordMatches.querySelectorAll('[data-delete-record]').forEach(btn=>btn.onclick=()=>{if(!confirm('確定刪除這一題的全部個人紀錄（包含錯題、收藏和備註）？'))return;deleteQuestionRecord(b.subjectId,btn.dataset.deleteRecord);renderMatches();});};
  recordSearch.oninput=renderMatches;renderMatches();
- document.getElementById('bankImport').onclick=async()=>{try{const text=await readJsonFile(document.getElementById('bankUpload'));if(!text){message('請先選擇 JSON 題庫。',true);return;}const {raw,bank}=validateImportedBank(text);if(!confirm(`題庫驗證通過：${bank.chapters.length} 章、${bank.questions.length} 題。確定匯入？目前未完成的練習將結束。`))return;saveImportedBank(raw);saveSession(b.subjectId,null);await switchBank();message(`已匯入 ${bank.questions.length} 題，舊紀錄仍保留。`);}catch(e){message(e.message,true);}};
+ document.getElementById('bankImport').onclick=async()=>{try{const fileInput=document.getElementById('bankUpload');if(!fileInput.files?.[0])throw new Error('請先選擇題庫檔案。');if(!confirm('確定更換題庫？目前未完成的練習將結束，已有紀錄仍保留。'))return;const bank=await importQuizFile(fileInput);saveSession(b.subjectId,null);await switchBank();message(`已匯入 ${bank.questions.length} 題，舊紀錄仍保留。`);}catch(e){message(e.message,true);}};
  document.getElementById('removeBank').onclick=()=>{if(!confirm('移除瀏覽器內的題庫？學習紀錄會保留，但未匯入題庫前無法查看。'))return;removeImportedBank();state.bank=null;state.session=null;showFirstImport();};
  document.getElementById('exportBackup').onclick=()=>{try{downloadJson(`刷題寶-${b.subjectId}-backup-${new Date().toISOString().slice(0,10)}.json`,createBackup(b.subjectId));message('已建立並下載備份。');}catch(e){message(`備份失敗：${e.message}`,true);}};
  document.getElementById('restoreBackup').onclick=async()=>{try{const text=await readJsonFile(document.getElementById('backupUpload'));if(!text){message('請先選擇備份 JSON。',true);return;}let data;try{data=JSON.parse(text);}catch{throw new Error('備份 JSON 格式錯誤。');}import('./dataManagement.js').then(async ({validateBackup})=>{try{validateBackup(data,b.subjectId);if(!confirm('還原會覆蓋目前此科目的所有學習資料與已匯入題庫。確定還原嗎？'))return;restoreBackup(data,b.subjectId);await switchBank();message('備份還原完成。');}catch(e){message(`還原失敗：${e.message}`,true);}});}catch(e){message(e.message,true);}};
@@ -162,7 +219,7 @@ function wrongPage(){
  content.innerHTML=title('MISTAKE REVIEW','錯題本','歷史錯題不會因為訂正或掌握而刪除；重新答錯會再次進入待複習。')+
  `<section class="metric-grid"><div class="card"><div class="metric-title">歷史錯題</div><div class="metric-value">${mistakes.length}</div></div><div class="card"><div class="metric-title">待複習</div><div class="metric-value">${pending.length}</div></div><div class="card"><div class="metric-title">已掌握</div><div class="metric-value">${mastered.length}</div></div><div class="card"><div class="metric-title">連續答對達標</div><div class="metric-value">3 次</div></div></section>`+
  `<div class="toolbar">${chapterSelect(state.wrongChapter,'wrong')}<select class="field" id="wrongStatus"><option value="all">所有錯題</option><option value="review" ${state.wrongStatus==='review'?'selected':''}>待訂正</option><option value="corrected" ${state.wrongStatus==='corrected'?'selected':''}>已訂正、未掌握</option><option value="mastered" ${state.wrongStatus==='mastered'?'selected':''}>已掌握</option></select><button class="btn" id="practiceWrong" ${!pending.length?'disabled':''}>練習待複習錯題（${pending.length}）</button><button class="btn btn-secondary" id="practiceVisibleWrong" ${!visible.length?'disabled':''}>練習目前篩選（${visible.length}）</button></div>`+
- `<section class="question-list">${visible.length?visible.map(q=>{const r=progress[q.id],status=mistakeStatus(r);return `<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="status-pill">${status==='mastered'?'✓ 已掌握':status==='corrected'?'已訂正（繼續複習）':'待訂正'}</span></div><h3 class="question-text">${esc(q.text)}</h3><div class="record-meta">答錯 ${fmt(r.wrong)} 次 · 連續答對 ${fmt(r.streak||0)} 次 · 最近答錯：${esc(r.lastWrongAt?new Date(r.lastWrongAt).toLocaleString('zh-TW'):'舊版紀錄未保存時間')}</div><div class="answer-panel"><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}${q.options.length?' — '+esc(q.options.filter(([k])=>Array.isArray(q.answer)?q.answer.includes(k):k===q.answer).map(([,v])=>v).join('、')):''}</div><div><b>解析：</b><span class="preline">${esc(q.explanation||'原始題庫未提供解析')}</span></div></div><div class="tool-actions">${favoriteControl(q,progress)}<label class="inline-check"><input type="checkbox" data-corrected="${esc(q.id)}" ${r.corrected?'checked':''}> 標記已訂正</label><button class="btn btn-secondary" data-practice-one="${esc(q.id)}">練習本題</button></div></article>`;}).join(''):'<div class="card empty">此篩選條件下沒有錯題。</div>'}</section>`;
+ `<section class="question-list">${visible.length?visible.map(q=>{const r=progress[q.id],status=mistakeStatus(r);return `<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="status-pill">${status==='mastered'?'✓ 已掌握':status==='corrected'?'已訂正（繼續複習）':'待訂正'}</span></div><div class="question-text">${renderQuestionBody(q)}</div>${questionMedia(q)}<div class="record-meta">答錯 ${fmt(r.wrong)} 次 · 連續答對 ${fmt(r.streak||0)} 次 · 最近答錯：${esc(r.lastWrongAt?new Date(r.lastWrongAt).toLocaleString('zh-TW'):'舊版紀錄未保存時間')}</div><div class="answer-panel"><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}${q.options.length?' — '+esc(q.options.filter(([k])=>Array.isArray(q.answer)?q.answer.includes(k):k===q.answer).map(([,v])=>v).join('、')):''}</div><div><b>解析：</b><span class="preline">${esc(q.explanation||'原始題庫未提供解析')}</span></div></div>${referenceButton(q,true)}<div class="tool-actions">${favoriteControl(q,progress)}<label class="inline-check"><input type="checkbox" data-corrected="${esc(q.id)}" ${r.corrected?'checked':''}> 標記已訂正</label><button class="btn btn-secondary" data-practice-one="${esc(q.id)}">練習本題</button></div></article>`;}).join(''):'<div class="card empty">此篩選條件下沒有錯題。</div>'}</section>`;
  document.getElementById('wrongChapter').onchange=e=>{state.wrongChapter=e.target.value;wrongPage();};
  document.getElementById('wrongStatus').onchange=e=>{state.wrongStatus=e.target.value;wrongPage();};
  document.getElementById('practiceWrong').onclick=()=>beginFilteredPractice('wrong');
@@ -177,7 +234,7 @@ function favoritesPage(){
  const visible=all.filter(q=>state.favoriteChapter==='all'||q.chapterId===state.favoriteChapter);
  content.innerHTML=title('SAVED QUESTIONS','收藏題目','收藏狀態與個人備註保存在目前瀏覽器，重新整理後仍會保留。')+
  `<div class="toolbar">${chapterSelect(state.favoriteChapter,'favorite')}<button class="btn" id="practiceFavorite" ${!visible.length?'disabled':''}>練習目前收藏（${visible.length}）</button></div><p class="muted">已收藏 ${all.length} 題 · 目前顯示 ${visible.length} 題</p>`+
- `<section class="question-list">${visible.length?visible.map(q=>{const r=progress[q.id];return `<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span>${favoriteControl(q,progress)}</div><h3 class="question-text">${esc(q.text)}</h3><div class="option-list">${q.options.map(([k,v])=>`<div class="option"><b>${esc(k)}.</b>${esc(v)}</div>`).join('')}</div><label class="note-label" for="note-${esc(q.id)}">個人備註</label><textarea class="field note-field" id="note-${esc(q.id)}" data-note="${esc(q.id)}" rows="3" placeholder="記錄你想複習的重點…">${esc(r.note||'')}</textarea><div class="tool-actions"><small class="muted">備註離開輸入框後自動儲存</small><button class="btn btn-secondary" data-practice-one="${esc(q.id)}">練習本題</button></div></article>`;}).join(''):'<div class="card empty">目前沒有符合篩選條件的收藏題目。可在刷題時點選「☆ 收藏」。</div>'}</section>`;
+ `<section class="question-list">${visible.length?visible.map(q=>{const r=progress[q.id];return `<article class="card question-card"><div class="question-head"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span>${favoriteControl(q,progress)}</div><div class="question-text">${renderQuestionBody(q)}</div>${questionMedia(q)}<div class="option-list">${q.options.map(([k,v])=>`<div class="option"><b>${esc(k)}.</b>${esc(v)}</div>`).join('')}</div><label class="note-label" for="note-${esc(q.id)}">個人備註</label><textarea class="field note-field" id="note-${esc(q.id)}" data-note="${esc(q.id)}" rows="3" placeholder="記錄你想複習的重點…">${esc(r.note||'')}</textarea><div class="tool-actions"><small class="muted">備註離開輸入框後自動儲存</small><button class="btn btn-secondary" data-practice-one="${esc(q.id)}">練習本題</button></div></article>`;}).join(''):'<div class="card empty">目前沒有符合篩選條件的收藏題目。可在刷題時點選「☆ 收藏」。</div>'}</section>`;
  document.getElementById('favoriteChapter').onchange=e=>{state.favoriteChapter=e.target.value;favoritesPage();};
  document.getElementById('practiceFavorite').onclick=()=>beginSelection(visible,'favorites');
  content.querySelectorAll('[data-note]').forEach(el=>{
@@ -193,7 +250,8 @@ function captureDraft(question,session){
  let value;
  if(question.type==='single')value=form.querySelector('input[name=answer]:checked')?.value;
  else if(question.type==='multiple')value=[...form.querySelectorAll('input[name=answer]:checked')].map(el=>el.value);
- else if(question.type==='text')value=form.querySelector('#textAnswer')?.value;
+ else if(['text','essay'].includes(question.type))value=form.querySelector('#textAnswer')?.value;
+ else if(question.type==='boolean')value=form.querySelector('input[name=answer]:checked')?.value;
  if(value===undefined)return;
  session.answers[question.id]={value,confirmed:false};
  saveSession(state.bank.subjectId,session);
@@ -202,12 +260,12 @@ function selectedAnswer(value){return value===undefined||value===null||value==='
 function reviewDetails(session,wrongOnly=true){
  const items=session.ids.map((id,index)=>({question:state.bank.questionMap.get(id),answer:session.answers[id],index})).filter(x=>x.question&&(!wrongOnly||(x.answer?.confirmed&&!x.answer.correct)));
  if(!items.length)return `<div class="empty">${wrongOnly?'本次沒有答錯的題目。':'沒有可查看的題目。'}</div>`;
- return items.map(({question:q,answer:a,index})=>`<article class="card question-card"><div class="question-head"><span class="pill">第 ${index+1} 題 · ${esc(q.chapterTitle)} · 原題 ${esc(q.originalId)}</span><span class="status-pill">${!a?.confirmed?'未作答':a.correct?'✓ 答對':'✕ 答錯'}</span></div><h3 class="question-text preline">${esc(q.text)}</h3><div class="option-list">${q.options.map(([k,v])=>`<div class="option"><b>${esc(k)}.</b>${esc(v)}</div>`).join('')}</div><p><b>你的答案：</b>${esc(selectedAnswer(a?.value))}</p><div class="answer-panel ${a?.correct?'correct-panel':'incorrect-panel'}"><div><b>正確答案：</b>${esc(selectedAnswer(q.answer))}</div><div><b>詳細解析：</b><span class="preline">${esc(q.explanation||'原始題庫沒有提供解析')}</span></div></div></article>`).join('');
+ return items.map(({question:q,answer:a,index})=>`<article class="card question-card"><div class="question-head"><span class="pill">第 ${index+1} 題 · ${esc(q.chapterTitle)} · 原題 ${esc(q.originalId)}</span><span class="status-pill">${!a?.confirmed?'未作答':a.correct?'✓ 答對':'✕ 答錯'}</span></div><div class="question-text">${renderQuestionBody(q)}</div>${questionMedia(q)}<div class="option-list">${q.options.map(([k,v])=>`<div class="option"><b>${esc(k)}.</b>${esc(v)}</div>`).join('')}</div><p><b>你的答案：</b>${esc(selectedAnswer(a?.value))}</p><div class="answer-panel ${a?.correct?'correct-panel':'incorrect-panel'}"><div><b>正確答案：</b>${esc(selectedAnswer(q.answer))}</div><div><b>詳細解析：</b><span class="preline">${esc(q.explanation||'原始題庫沒有提供解析')}</span></div></div>${referenceButton(q,true)}</article>`).join('');
 }
 function finishCurrentSession(session,question){
  if(question)captureDraft(question,session);
  const pending=session.ids.filter(id=>!session.answers[id]?.confirmed);
- const toGrade=pending.filter(id=>{
+ const toGrade=pending.filter(id=>{if(state.bank.questionMap.get(id)?.type==='essay')return false;
   const a=session.answers[id];return a&&a.value!==undefined&&a.value!==null&&a.value!==''&&(!Array.isArray(a.value)||a.value.length>0);
  });
  const unanswered=pending.length-toGrade.length;
@@ -235,14 +293,15 @@ function practicePage(){
  const index=session.index, q=state.bank.questionMap.get(session.ids[index]);
  if(!q){content.innerHTML='<div class="error">無法找到目前題目，請重新載入。</div>';return;}
  const previous=session.answers[q.id]||{}, confirmed=!!previous.confirmed, isLast=index===session.ids.length-1;
- const answerHtml=confirmed?`<div class="answer-panel ${previous.correct?'correct-panel':'incorrect-panel'}" role="status"><strong>${previous.correct?'✓ 答對了':'✕ 答錯了'}</strong><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}</div><div><b>題目解析：</b><span class="preline">${esc(q.explanation||'原始題庫未提供解析')}</span></div></div>`:'';
- const inputHtml=q.type==='single'||q.type==='multiple'?`<div class="answer-options">${q.options.map(([key,value])=>`<label class="answer-option ${confirmed&&((Array.isArray(previous.value)?previous.value:[previous.value]).includes(key))?'chosen':''}"><input name="answer" type="${q.type==='single'?'radio':'checkbox'}" value="${esc(key)}" ${((Array.isArray(previous.value)?previous.value:[previous.value]).includes(key))?'checked':''} ${confirmed?'disabled':''}><span><strong>${esc(key)}.</strong> ${esc(value)}</span></label>`).join('')}</div>`:q.type==='text'?`<label class="input-label">請輸入答案<input id="textAnswer" class="field" value="${esc(previous.value??'')}" ${confirmed?'disabled':''}></label>`:`<div class="notice">目前尚未支援此題型。</div>`;
+ const answerHtml=confirmed?`<div class="answer-panel ${previous.correct?'correct-panel':'incorrect-panel'}" role="status"><strong>${previous.correct?'✓ 答對了':'✕ 答錯了'}</strong><div><b>正確答案：</b>${esc(Array.isArray(q.answer)?q.answer.join('、'):q.answer)}</div><div><b>題目解析：</b><span class="preline">${esc(q.explanation||'原始題庫未提供解析')}</span></div></div>${referenceButton(q,true)}`:'';
+ const inputHtml=q.type==='single'||q.type==='multiple'?`<div class="answer-options">${q.options.map(([key,value])=>`<label class="answer-option ${confirmed&&((Array.isArray(previous.value)?previous.value:[previous.value]).includes(key))?'chosen':''}"><input name="answer" type="${q.type==='single'?'radio':'checkbox'}" value="${esc(key)}" ${((Array.isArray(previous.value)?previous.value:[previous.value]).includes(key))?'checked':''} ${confirmed?'disabled':''}><span><strong>${esc(key)}.</strong> ${esc(value)}</span></label>`).join('')}</div>`:q.type==='boolean'?`<div class="answer-options">${(q.options.length?q.options:[['true','正確／是'],['false','錯誤／非']]).map(([key,val])=>`<label class="answer-option"><input type="radio" name="answer" value="${esc(key)}" ${String(previous.value)===key?'checked':''} ${confirmed?'disabled':''}><span>${esc(val)}</span></label>`).join('')}</div>`:q.type==='text'?`<label class="input-label">請輸入答案<input id="textAnswer" class="field" value="${esc(previous.value??'')}" ${confirmed?'disabled':''}></label>`:q.type==='essay'?`<label class="input-label">請輸入你的回答<textarea id="textAnswer" class="field essay-field" rows="6" ${confirmed?'disabled':''}>${esc(previous.value??'')}</textarea></label><p class="small-note">問答題不使用不可靠的自動文字比對；確認後對照參考答案自行判定。</p>`:`<div class="notice">目前尚未支援此題型。</div>`;
  const answeredCount=Object.values(session.answers).filter(a=>a.confirmed).length;
- content.innerHTML=title('PRACTICE','題庫練習',`已確認 ${answeredCount} / ${session.ids.length} 題；可自由切換題目，不會提前公布答案。`)+`<div class="card"><div class="practice-top"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="muted">第 ${index+1} / ${session.ids.length} 題</span>${favoriteControl(q,loadProgress(state.bank.subjectId))}</div><div class="progress-track"><div class="progress-bar" style="width:${Math.round(answeredCount/session.ids.length*100)}%"></div></div><h2 class="practice-question preline">${esc(q.text)}</h2><form id="answerForm">${inputHtml}<div class="action-row">${!confirmed?`<button class="btn" type="submit">確認答案</button>`:'<span class="muted">本題已確認，無法重複計分。</span>'}</div></form>${answerHtml}<div class="practice-footer"><button class="btn btn-secondary" id="previousQuestion" ${index===0?'disabled':''}>← 上一題</button><button class="btn btn-secondary" id="nextQuestion" ${isLast?'disabled':''}>下一題 →</button></div><div class="practice-footer"><button class="btn btn-secondary" id="leavePractice">返回首頁（保留進度）</button><button class="btn" id="finishPractice">結算練習</button></div></div>`;
+ content.innerHTML=title('PRACTICE','題庫練習',`已確認 ${answeredCount} / ${session.ids.length} 題；可自由切換題目，不會提前公布答案。`)+`<div class="card"><div class="practice-top"><span class="pill">${esc(q.chapterTitle)} · 第 ${esc(q.originalId)} 題</span><span class="muted">第 ${index+1} / ${session.ids.length} 題</span>${favoriteControl(q,loadProgress(state.bank.subjectId))}</div><div class="progress-track"><div class="progress-bar" style="width:${Math.round(answeredCount/session.ids.length*100)}%"></div></div><div class="practice-question">${renderQuestionBody(q)}</div>${questionMedia(q)}<form id="answerForm">${inputHtml}<div class="action-row">${!confirmed?`<button class="btn" type="submit">確認答案</button>`:'<span class="muted">本題已確認，無法重複計分。</span>'}</div></form>${answerHtml}<div class="practice-footer"><button class="btn btn-secondary" id="previousQuestion" ${index===0?'disabled':''}>← 上一題</button><button class="btn btn-secondary" id="nextQuestion" ${isLast?'disabled':''}>下一題 →</button></div><div class="practice-footer"><button class="btn btn-secondary" id="leavePractice">返回首頁（保留進度）</button><button class="btn" id="finishPractice">結算練習</button></div></div>`;
  wireFavorites();
- document.getElementById('answerForm').onsubmit=e=>{e.preventDefault();if(confirmed)return;captureDraft(q,session);const value=session.answers[q.id]?.value;if(value===undefined||value===null||(Array.isArray(value)&&!value.length)||(typeof value==='string'&&!value.trim())){alert('請先作答，再按確認答案。');return;}const correct=grade(q,value);if(correct===null){alert('目前不支援自動判斷此題型。');return;}session.answers[q.id]={value,correct,confirmed:true,at:new Date().toISOString()};const progress=loadProgress(state.bank.subjectId);recordAnswer(progress,q,value,correct);saveProgress(state.bank.subjectId,progress);saveSession(state.bank.subjectId,session);practicePage();};
+ document.getElementById('answerForm').onsubmit=e=>{e.preventDefault();if(confirmed)return;captureDraft(q,session);const value=session.answers[q.id]?.value;if(value===undefined||value===null||(Array.isArray(value)&&!value.length)||(typeof value==='string'&&!value.trim())){alert('請先作答，再按確認答案。');return;}const correct=grade(q,value);if(correct===null && q.type!=='essay'){alert('目前不支援自動判斷此題型。');return;}
+ const judged=q.type==='essay'?confirm(`請先核對參考答案與解析，再自行判定是否答對。\n\n參考答案：${String(q.answer??'未提供')}\n解析：${q.explanation||'未提供'}\n\n選「確定」表示答對，「取消」表示答錯。`):correct;session.answers[q.id]={value,correct:judged,confirmed:true,at:new Date().toISOString()};const progress=loadProgress(state.bank.subjectId);recordAnswer(progress,q,value,judged);saveProgress(state.bank.subjectId,progress);saveSession(state.bank.subjectId,session);practicePage();};
  document.getElementById('answerForm').onchange=()=>captureDraft(q,session);
- document.getElementById('answerForm').oninput=()=>{if(q.type==='text')captureDraft(q,session);};
+ document.getElementById('answerForm').oninput=()=>{if(['text','essay'].includes(q.type))captureDraft(q,session);};
  document.getElementById('previousQuestion').onclick=()=>{captureDraft(q,session);session.index--;saveSession(state.bank.subjectId,session);practicePage();};document.getElementById('nextQuestion').onclick=()=>{captureDraft(q,session);session.index++;saveSession(state.bank.subjectId,session);practicePage();};document.getElementById('leavePractice').onclick=()=>{captureDraft(q,session);navigate('dashboard');};
  document.getElementById('finishPractice').onclick=()=>finishCurrentSession(session,q);
 }
@@ -252,12 +311,20 @@ function render(){if(!state.bank){showFirstImport();return;} if(state.page==='da
 function showFirstImport(error='') {
  state.bank=null;
  content.innerHTML=title('LOCAL FIRST','匯入自己的 JSON 題庫','此網站不提供、下載或公開任何內建考試題庫。請從自己的裝置選取有權使用的 JSON 檔案。')+
- `<section class="card settings-actions"><h2>開始使用</h2><p class="muted">題庫只會由瀏覽器讀取並保存在此網站來源的 localStorage，不會由本站程式主動傳送至伺服器。請不要在共用裝置匯入敏感資料。</p><label class="input-label" for="firstBankUpload">選擇題庫 JSON<input class="field" id="firstBankUpload" type="file" accept=".json,application/json"></label><div class="tool-actions"><button class="btn" id="firstBankImport">驗證並匯入題庫</button></div><p id="firstBankMessage" class="small-note" role="alert">${esc(error)}</p></section>`;
+ `<section class="card settings-actions"><h2>開始使用</h2><p class="muted">題庫只會由瀏覽器讀取並保存在此網站來源的 localStorage，不會由本站程式主動傳送至伺服器。請不要在共用裝置匯入敏感資料。</p><label class="input-label" for="firstBankUpload">選擇題庫 JSON 或含圖片 ZIP<input class="field" id="firstBankUpload" type="file" accept=".json,.zip,application/json,application/zip"></label><div class="tool-actions"><button class="btn" id="firstBankImport">驗證並匯入題庫</button></div><p id="firstBankMessage" class="small-note" role="alert">${esc(error)}</p></section>`;
  document.getElementById('firstBankImport').onclick=async()=>{
    const msg=document.getElementById('firstBankMessage');
-   try { const text=await readJsonFile(document.getElementById('firstBankUpload'));if(!text)throw new Error('請先選擇 JSON 題庫。');const {raw,bank}=validateImportedBank(text);saveImportedBank(raw);state.bank=bank;state.session=loadSession(bank.subjectId);if(state.session?.ids?.some(id=>!bank.questionMap.has(id))){state.session=null;saveSession(bank.subjectId,null);}navigate('dashboard'); }
+   try { const bank=await importQuizFile(document.getElementById('firstBankUpload'));state.bank=bank;state.session=loadSession(bank.subjectId);if(state.session?.ids?.some(id=>!bank.questionMap.has(id))){state.session=null;saveSession(bank.subjectId,null);}navigate('dashboard'); }
    catch(e){msg.textContent=e.message;}
  };
 }
 try { const imported=readImportedBank();if(imported){state.bank=imported.bank;state.session=loadSession(state.bank.subjectId);if(state.session && (!Array.isArray(state.session.ids)||!state.session.answers||state.session.ids.some(id=>!state.bank.questionMap.has(id)))){state.session=null;saveSession(state.bank.subjectId,null);}render();}else showFirstImport(); }
 catch(e){showFirstImport(`載入失敗：${e.message}`);}
+
+// Delegated private page image viewer, initialized once.
+content.addEventListener('click', async event=>{
+ const btn=event.target.closest('[data-source-page]');if(!btn)return;
+ const q=state.bank?.questionMap.get(btn.dataset.sourcePage);const box=btn.parentElement.querySelector('[data-source-output]');if(!q||!box)return;
+ box.replaceChildren();
+ for(const path of q.referenceImages||[]){try{const blob=await getMedia(path);if(!blob){const p=document.createElement('p');p.textContent='沒有圖片資料，請重新匯入完整 ZIP：'+path;box.append(p);continue;}const img=document.createElement('img');const url=URL.createObjectURL(blob);img.src=url;img.className='reference-page';img.alt='教材原頁，含答案與解析';img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);box.append(img);}catch(e){box.textContent='圖片讀取失敗：'+e.message;}}
+});

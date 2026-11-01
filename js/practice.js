@@ -11,7 +11,7 @@ export function selectQuestions(bank,progress,{mode,chapter,count,random}){
  const pool=candidates(bank,progress,mode,chapter);
  return (mode==='random'||random?shuffle(pool):pool).slice(0,Math.max(1,Math.min(pool.length,Number(count)||pool.length)));
 }
-export function grade(question,answer){if(question.type==='single')return answer===question.answer;if(question.type==='multiple')return Array.isArray(answer)&&answer.length===question.answer.length&&answer.every(v=>question.answer.includes(v));if(question.type==='text')return String(answer??'').trim()===String(question.answer).trim();return null;}
+export function grade(question,answer){if(question.type==='single')return answer===question.answer;if(question.type==='multiple')return Array.isArray(answer)&&answer.length===question.answer.length&&answer.every(v=>question.answer.includes(v));if(question.type==='text'){const norm=v=>String(v??'').trim().normalize('NFKC').toLowerCase();return (Array.isArray(question.answer)?question.answer:[question.answer]).some(v=>norm(v)===norm(answer));}if(question.type==='boolean'){const truth=v=>{const x=String(v).trim().toLowerCase();return ['true','是','對','正確'].includes(x)?'true':['false','非','錯','錯誤'].includes(x)?'false':x};return truth(answer)===truth(question.answer);}return null;}
 export function recordAnswer(progress,question,answer,correct,at=new Date().toISOString()){
  if(typeof correct!=='boolean')throw new Error('不支援的題型不能自動判分');
  const r=progress[question.id]||{};
