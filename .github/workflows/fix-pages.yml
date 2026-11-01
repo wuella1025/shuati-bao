@@ -1,0 +1,25 @@
+
+name: 修復 GitHub Pages 卡住的部署
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+
+jobs:
+  cancel-stuck-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取消卡住的 Pages 部署
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail-with-body -sS -L \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/wuella1025/shuati-bao/pages/deployments/bf9b4b2704811fb850ead18d86c2272fbdbd4e38/cancel"
+
