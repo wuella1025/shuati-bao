@@ -15,3 +15,24 @@
 .record-delete-row button{flex-shrink:0}
 .history-table button{white-space:nowrap;margin:2px}
 @media(max-width:600px){.record-delete-row{align-items:flex-start;flex-direction:column}.record-delete-row button{width:100%}}
+/* Source material is shown only after an answer is revealed. */
+.question-text,.practice-question,.option,.preline{white-space:pre-wrap;overflow-wrap:anywhere}
+.reference-output{display:grid;gap:12px;margin-top:12px}
+.reference-page{display:block;width:100%;max-width:900px;height:auto;border:1px solid #d6dfeb;border-radius:12px}
+.source-reference{margin:12px 0}
+
+/* Secure, answer-free, source-faithful question imagery */
+.question-media{margin:14px 0;padding:12px;border:1px solid #e0e8f4;border-radius:12px;background:#fff}
+.media-caption{font-size:12px;color:#536781;font-weight:650;margin-bottom:10px}
+.question-source-image{display:block;width:100%;height:auto;max-width:960px;margin:10px auto;border-radius:7px;border:1px solid #e7edf6;object-fit:contain}
+.essay-field{width:100%;min-height:148px;resize:vertical;white-space:pre-wrap;font-family:inherit}
+.question-text,.practice-question,.option,.answer-option span{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:650px){.question-media{padding:7px}.question-source-image{max-width:100%}}
+
+/* Mixed question content: use code blocks only when a question contains source code. */
+.mixed-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 10px}
+.mixed-code{background:#152235;color:#eef5ff;border-radius:12px;overflow:hidden;margin:12px 0 16px;font-weight:400}
+.mixed-code-label{font-size:12px;color:#abc4df;background:#1c3049;padding:7px 14px;text-transform:uppercase}
+.mixed-code pre{margin:0;padding:16px;overflow-x:auto;tab-size:4;white-space:pre;font:14px/1.65 Consolas,"Courier New",monospace;text-align:left}
+.mixed-code code{font:inherit;color:inherit;white-space:pre}
+.question-text .mixed-code,.practice-question .mixed-code{font-weight:400}
